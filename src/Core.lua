@@ -1,5 +1,5 @@
 local socket = require("socket")
-local BinaryStream = require("BinaryStream")
+local BinaryStream = require("src/network/BinaryStream")
 local PluginManager = require("PluginManager")
 local cjson = require("cjson") -- Library JSON untuk Lua
 local PacketIds = require("PacketIds")
@@ -58,29 +58,30 @@ function Core:sendRakNetFrame(session, payload)
 end
 
 function Core:handleBatch(payload, session)
-    -- 1. Lewati byte 0xfe
-    local data = string.sub(payload, 2)
+    -- Ambil data setelah byte 0xfe
+    local compressed = string.sub(payload, 2)
     
-    -- 2. Dekompresi (Minecraft 1.21 menggunakan Zlib)
-    local success, uncompressed = pcall(function() 
-        return zlib.inflate()(data) 
+    -- Gunakan pcall karena paket yang korup bisa mematikan server
+    local status, uncompressed = pcall(function()
+        -- Beberapa library zlib butuh header dihilangkan atau disesuaikan
+        return zlib.decompress(compressed) 
     end)
-    
-    if not success then
-        print("[Error] Gagal dekompresi Batch Packet")
+
+    if not status or not uncompressed then
+        print("[Network] Gagal dekompresi paket batch dari " .. session.username)
         return
     end
 
-    -- 3. Proses paket-paket di dalam batch
     local stream = BinaryStream.new(uncompressed)
     while not stream:feof() do
         local length = stream:getUnsignedVarInt()
-        local gameData = stream:get(length)
+        if length == 0 then break end -- Hindari loop tak terbatas
         
-        -- Kirim ke fungsi identifikasi paket (Login, Move, dll)
-        self:handleGamePacket(gameData, session)
+        local gameData = stream:get(length)
+        self:handleGamePacketID(gameData, session)
     end
 end
+
 
 function Core:saveChunk(chunkX, chunkZ, data)
     -- Pastikan folder world ada
@@ -108,31 +109,22 @@ function Core:loadChunk(chunkX, chunkZ)
     return nil -- Chunk belum ada di file
 end
 function Core:provideChunk(session, chunkX, chunkZ)
-    -- 1. Coba ambil dari file
-    local data = self:loadChunk(chunkX, chunkZ)
-    
-    if not data then
-        -- 2. Jika tidak ada, generate baru (Flat)
-        local subChunkData = self:generateFlatSubChunk()
-        local footer = string.rep("\x00", 25)
-        data = subChunkData .. footer
-        
-        -- 3. Simpan hasil generate ke file untuk lain kali
-        self:saveChunk(chunkX, chunkZ, data)
-    end
+    local data = self:loadChunk(chunkX, chunkZ) or (self:generateFlatSubChunk() .. string.rep("\x00", 25))
 
-    -- 4. Kirim ke pemain
     local stream = BinaryStream.new()
     stream:putUnsignedVarInt(0x3a) -- LevelChunkPacket
     stream:putVarInt(chunkX)
     stream:putVarInt(chunkZ)
-    stream:putUnsignedVarInt(1) -- Sub-chunk count
-    stream:putBoolean(false)
+    stream:putUnsignedVarInt(1)    -- Sub-chunk count
+    stream:putBoolean(false)       -- Client Side Request
+    
+    -- Tulis panjang data lalu datanya
     stream:putUnsignedVarInt(#data)
-    stream.buffer = stream.buffer .. data
+    stream:putRaw(data) 
 
     self:sendGamePacket(session, stream:getBuffer())
 end
+
 function Core:generateFlatSubChunk()
     local stream = BinaryStream.new()
     stream:putByte(8) -- Sub-chunk version
@@ -415,19 +407,16 @@ function Core:handleFrameSet(data, session)
     end
 end
 
--- Fungsi Wajib: Mengirim ACK
 function Core:sendACK(session, seqNumber)
     local stream = BinaryStream.new()
-    stream:putByte(0xc0) -- ID ACK
+    stream:putByte(0xc0)      -- ID_ACK
+    stream:putShort(1)         -- Jumlah record (1)
+    stream:putBoolean(true)    -- Single sequence number
+    stream:putLTriad(seqNumber) -- Urutan yang diakui (Little Endian)
     
-    -- Struktur ACK sederhana (Single Record)
-    stream:putShort(0) -- Record Count: 0 (artinya hanya 1 record)
-    stream:putBoolean(true) -- Single Sequence Number? True
-    stream:putLTriad(seqNumber) -- Nomor urut yang kita terima tadi
-    
-    -- Kirim langsung tanpa encapsulation
-    self.socket:sendto(stream:getBuffer(), session.ip, session.port)
+    self.socket:sendto(stream:getBuffer(), session.address, session.port)
 end
+
 
 
 function Core:sendChunk(session, chunkX, chunkZ)
@@ -1115,39 +1104,37 @@ function Core:registerCommand(name, callback)
 end
 
 
--- Di Core.lua (handlePing)
+-- Di dalam function Core:handlePing(ip, port) atau sendUnconnectedPong
 function Core:handlePing(ip, port)
-    local protocol, version = PacketIds.getLatest()
-    
+    local protocol, version = 775, "1.21.132" -- Hardcoded sementara untuk fix
+    local sId = 123456789 -- Pastikan angka, bukan string di sini
+
     local stream = BinaryStream.new()
-    stream:putByte(0x1c) 
+    stream:putByte(0x1c) -- ID_UNCONNECTED_PONG
     stream:putLong(os.time())
-    stream:putLong(987654321) -- Server ID
+    stream:putLong(sId) 
+    stream.buffer = stream.buffer .. self.RAKNET_MAGIC
     
-    -- Format String RakNet Bedrock
-    local motd = {
+    -- Format MOTD Bedrock: Edition;MOTD;Protocol;Version;Players;MaxPlayers;ServerID;SubMOTD;GameMode;
+    local motd = table.concat({
         "MCPE",
-        "MineLua Server",     -- Nama Server
-        protocol,             -- 775
-        version,              -- 1.21.132
-        "0",                  -- Online
-        "100",                 -- Max
-        "123456789",          -- GUID
-        "MineLua",            -- Subname
-        "Survival",           -- Gamemode
-        "1",                  -- Port IPv4
-        "19132",
-        "19132"
-    }
-    
-    local serverName = table.concat(motd, ";") .. ";"
-    local payload = stream:getBuffer() .. self.RAKNET_MAGIC
-    
-    local finalStream = BinaryStream.new(payload)
-    finalStream:putString(serverName)
-    
-    self.socket:sendto(finalStream:getBuffer(), ip, port)
+        "MineLua Server",
+        protocol,
+        version,
+        "0",
+        "100",
+        tostring(sId),
+        "A Lua Server",
+        "Survival",
+        "1",     -- IPv4 Port Status
+        "19132", -- Port
+        "19132"  -- Port
+    }, ";") .. ";"
+
+    stream:putString16(motd)
+    self.socket:sendto(stream:getBuffer(), ip, port)
 end
+
 
 
 function Core:sendTranslatedMessage(player, message)
