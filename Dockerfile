@@ -1,6 +1,7 @@
-FROM alpine:latest
+# Menggunakan Alpine 3.18 yang stabil untuk Lua 5.3
+FROM alpine:3.18
 
-# Install Lua dan build dependencies
+# 1. Install dependensi sistem secara spesifik
 RUN apk add --no-cache \
     lua5.3 \
     lua5.3-dev \
@@ -8,22 +9,24 @@ RUN apk add --no-cache \
     musl-dev \
     make \
     luarocks \
-    zlib-dev
+    zlib-dev \
+    git \
+    unzip
 
-# Install dependensi library yang dibutuhkan kode Anda
-RUN luarocks-5.3 install luasocket
-RUN luarocks-5.3 install luafilesystem
-RUN luarocks-5.3 install lua-cjson
-RUN luarocks-5.3 install lua-zlib
+# 2. Pastikan LuaRocks menggunakan Lua 5.3
+RUN luarocks --lua-version 5.3 install luasocket && \
+    luarocks --lua-version 5.3 install luafilesystem && \
+    luarocks --lua-version 5.3 install lua-cjson && \
+    luarocks --lua-version 5.3 install lua-zlib
 
-# Set working directory
+# 3. Setup folder aplikasi
 WORKDIR /app
 
-# Copy semua file dari repo ke dalam image
+# 4. Copy file (pastikan file main.lua ada di root folder GitHub kamu)
 COPY . .
 
-# Expose port UDP Minecraft
+# 5. Ekspos port UDP Minecraft
 EXPOSE 19132/udp
 
-# Jalankan server
-CMD ["lua5.3", "src/Core.lua"]
+# 6. Jalankan dengan binary yang jelas
+CMD ["lua5.3", "main.lua"]
