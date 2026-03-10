@@ -1,0 +1,30 @@
+# MineLua .gitignore
+
+# Logs
+logs/
+*.log
+
+# Player data & world chunks (too large for git)
+worlds/*/players/
+worlds/*/db/
+
+# Keep world folder structure but not data
+!worlds/
+!worlds/.gitkeep
+
+# Plugin extracted cache
+/tmp/minelua_plugins/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Bans / ops (server-specific)
+config/bans.txt
+config/ops.txt

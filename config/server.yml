@@ -1,0 +1,35 @@
+# MineLua Server Configuration
+# https://github.com/minelua/minelua
+
+motd: "§aMineLua Server§r"
+sub_motd: "§7Powered by MineLua"
+max_players: 20
+port: 19132
+host: "0.0.0.0"
+
+# survival | creative | adventure | spectator
+game_mode: "survival"
+
+# peaceful | easy | normal | hard
+difficulty: "normal"
+
+view_distance: 10
+default_world: "world"
+
+# DEBUG | INFO | WARN | ERROR
+log_level: "INFO"
+
+online_mode: false
+white_list: false
+
+announce_player_join: true
+announce_player_leave: true
+
+# Auto-save interval in seconds
+auto_save_interval: 300
+
+# Packet compression threshold (bytes)
+compression_threshold: 256
+
+enable_query: true
+enable_rcon: false

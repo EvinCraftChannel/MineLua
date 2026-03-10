@@ -1,0 +1,26 @@
+# koyeb.yaml — MineLua deployment on Koyeb
+# Run: koyeb app init minelua --manifest koyeb.yaml
+
+name: minelua
+
+services:
+  - name: minelua-server
+    type: web          # "web" keeps the container alive; use ports for UDP
+    instance_type: nano
+    regions:
+      - was            # Washington DC; or sin (Singapore), fra (Frankfurt)
+    docker:
+      image: your-dockerhub-user/minelua:latest  # replace with your image
+    ports:
+      - port: 19132
+        protocol: udp
+    env:
+      - key: LUA_PATH
+        value: "./src/?.lua;./src/?/init.lua;/usr/share/lua/5.4/?.lua;;"
+    health_checks:
+      - grace_period: 20
+        interval: 30
+        restart_limit: 3
+        timeout: 5
+        type: TCP
+        port: 19132

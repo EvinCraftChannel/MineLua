@@ -1,0 +1,6 @@
+name: HelloWorld
+version: 1.0.0
+author: MineLua Team
+description: Example MineLua plugin that demonstrates the plugin API
+main: main.lua
+api: "1.0"

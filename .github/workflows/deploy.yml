@@ -1,0 +1,31 @@
+name: Deploy MineLua to Koyeb
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    name: Build & Deploy to Koyeb
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Install Koyeb CLI
+      - name: Install Koyeb CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | bash
+          echo "$HOME/.koyeb/bin" >> $GITHUB_PATH
+
+      # 3. Deploy / update service on Koyeb
+      #    Koyeb will detect the Dockerfile and build it automatically.
+      - name: Deploy to Koyeb
+        env:
+          KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        run: |
+          koyeb service redeploy minelua/minelua-server
